@@ -5,15 +5,16 @@ import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 
-type ShowcaseImage = {
+type ShowcaseItem = {
   id: string;
   url: string;
+  type: "image" | "video";
   uploadedAt: string;
 };
 
 export default function ShowcasePage() {
   const router = useRouter();
-  const [images, setImages] = useState<ShowcaseImage[]>([]);
+  const [items, setItems] = useState<ShowcaseItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -27,11 +28,10 @@ export default function ShowcasePage() {
     try {
       const res = await fetch("/api/assets/showcase", { cache: "no-store" });
       const data = await res.json();
-      if (data.images) {
-        setImages(data.images);
-      }
+      const nextItems = (data.items ?? data.images ?? []) as ShowcaseItem[];
+      setItems(nextItems);
     } catch {
-      setMessage("Failed to load images");
+      setMessage("Failed to load showcase");
     }
   };
 
@@ -54,12 +54,12 @@ export default function ShowcasePage() {
       });
 
       if (!res.ok) {
-        setMessage("Failed to upload images");
+        setMessage("Failed to upload files");
         return;
       }
 
       const data = await res.json();
-      setMessage(`Uploaded ${data.count} image(s)!`);
+      setMessage(`Uploaded ${data.count} file(s)!`);
       
       // Refresh the list
       await fetchImages();
@@ -73,7 +73,7 @@ export default function ShowcasePage() {
   };
 
   const handleDelete = async (imageUrl: string) => {
-    if (!confirm("Are you sure you want to delete this image?")) return;
+    if (!confirm("Are you sure you want to delete this item?")) return;
 
     try {
       setDeleting(imageUrl);
@@ -85,13 +85,13 @@ export default function ShowcasePage() {
       );
 
       if (!res.ok) {
-        setMessage("Failed to delete image");
+        setMessage("Failed to delete item");
         return;
       }
 
-      setMessage("Image deleted!");
+      setMessage("Deleted!");
       // Remove from local state
-      setImages((prev) => prev.filter((img) => img.url !== imageUrl));
+      setItems((prev) => prev.filter((item) => item.url !== imageUrl));
     } catch {
       setMessage("Something went wrong");
     } finally {
@@ -111,11 +111,11 @@ export default function ShowcasePage() {
           <div className="mb-6">
             <label className="flex flex-col gap-2 text-white">
               <span className="text-sm uppercase tracking-wide">
-                Upload images
+                Upload images / videos
               </span>
               <input
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
+                accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
                 multiple
                 disabled={uploading}
                 onChange={handleUpload}
@@ -142,45 +142,57 @@ export default function ShowcasePage() {
         {/* Image Grid */}
         <div className="bg-black border border-white rounded-lg p-6">
           <h2 className="text-xl font-bold text-white mb-4">
-            Current Images ({images.length})
+            Current Showcase ({items.length})
           </h2>
 
-          {images.length === 0 ? (
+          {items.length === 0 ? (
             <p className="text-white/50 text-center py-8">
-              No showcase images yet. Upload some above!
+              No showcase items yet. Upload some above!
             </p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {images.map((image) => (
+              {items.map((item) => (
                 <div
-                  key={image.id}
+                  key={item.id}
                   className="relative group rounded-lg overflow-hidden border border-white/20"
                 >
                   <div className="aspect-[3/4] relative">
-                    <Image
-                      src={image.url}
-                      alt="Showcase"
-                      fill
-                      sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
-                      className="object-cover"
-                    />
+                    {item.type === "video" ? (
+                      <video
+                        src={item.url}
+                        className="h-full w-full object-cover"
+                        muted
+                        playsInline
+                        preload="metadata"
+                        controls
+                      />
+                    ) : (
+                      <Image
+                        src={item.url}
+                        alt="Showcase"
+                        fill
+                        sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
+                        className="object-cover"
+                      />
+                    )}
                   </div>
 
                   {/* Overlay with delete button */}
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Button
-                      onClick={() => handleDelete(image.url)}
-                      disabled={deleting === image.url}
+                      onClick={() => handleDelete(item.url)}
+                      disabled={deleting === item.url}
                       className="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1"
                     >
-                      {deleting === image.url ? "..." : "🗑️ Delete"}
+                      {deleting === item.url ? "..." : "🗑️ Delete"}
                     </Button>
                   </div>
 
                   {/* Upload date */}
                   <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-2 py-1">
                     <p className="text-xs text-white/70 truncate">
-                      {new Date(image.uploadedAt).toLocaleDateString()}
+                      {item.type.toUpperCase()} •{" "}
+                      {new Date(item.uploadedAt).toLocaleDateString()}
                     </p>
                   </div>
                 </div>

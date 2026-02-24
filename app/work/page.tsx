@@ -5,11 +5,11 @@ import { motion } from "framer-motion";
 import TypingText from "@/components/TypingText";
 import Footer from "@/components/landing/Footer";
 import { Navbar } from "@/components/Navbar";
-import { useUiStore, ShowcaseImage } from "@/lib/store/useUiStore";
+import { useUiStore, ShowcaseItem } from "@/lib/store/useUiStore";
 import { useEffect, useState } from "react";
 
 export default function WorkShowcase() {
-  const { showcaseImages, setShowcaseImages } = useUiStore();
+  const { showcaseItems, setShowcaseItems } = useUiStore();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -17,16 +17,15 @@ export default function WorkShowcase() {
       try {
         const res = await fetch("/api/assets/showcase", { cache: "no-store" });
         const data = await res.json();
-        if (data.images) {
-          setShowcaseImages(data.images as ShowcaseImage[]);
-        }
+        const items = (data.items ?? data.images ?? []) as ShowcaseItem[];
+        setShowcaseItems(items);
       } catch {
         // Keep empty array on error
       }
       setIsLoading(false);
     };
     fetchShowcase();
-  }, [setShowcaseImages]);
+  }, [setShowcaseItems]);
 
   return (
     <>
@@ -50,14 +49,14 @@ export default function WorkShowcase() {
             <div className="flex justify-center items-center py-20">
               <div className="text-white/50 text-lg">Loading...</div>
             </div>
-          ) : showcaseImages.length === 0 ? (
+          ) : showcaseItems.length === 0 ? (
             <div className="flex justify-center items-center py-20">
               <div className="text-white/50 text-lg">No images yet</div>
             </div>
           ) : (
             <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 mb-24">
-              {showcaseImages.map((image, i) => (
-                <li key={image.id} className="relative">
+              {showcaseItems.map((item, i) => (
+                <li key={item.id} className="relative">
                   <motion.div
                     initial={{ opacity: 0, y: 8, scale: 0.985 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -66,20 +65,38 @@ export default function WorkShowcase() {
                     className="group relative rounded-2xl"
                   >
                     <div className="relative w-full max-h-150 mx-auto">
-                      <Image
-                        src={image.url}
-                        alt={`Work ${i + 1}`}
-                        width={800}
-                        height={1200}
-                        className="
-                          h-auto w-full max-h-150
-                          object-contain
-                          drop-shadow-[0_0_0_rgba(0,0,0,0)]
-                          hover:drop-shadow-[0_0_18px_rgba(255,255,0,0.8)]
-                          rounded-2xl
-                        "
-                        priority={i < 2}
-                      />
+                      {item.type === "video" ? (
+                        <video
+                          src={item.url}
+                          className="
+                            h-auto w-full max-h-150
+                            object-contain
+                            drop-shadow-[0_0_0_rgba(0,0,0,0)]
+                            group-hover:drop-shadow-[0_0_18px_rgba(255,255,0,0.8)]
+                            rounded-2xl
+                          "
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                          preload="metadata"
+                        />
+                      ) : (
+                        <Image
+                          src={item.url}
+                          alt={`Work ${i + 1}`}
+                          width={800}
+                          height={1200}
+                          className="
+                            h-auto w-full max-h-150
+                            object-contain
+                            drop-shadow-[0_0_0_rgba(0,0,0,0)]
+                            hover:drop-shadow-[0_0_18px_rgba(255,255,0,0.8)]
+                            rounded-2xl
+                          "
+                          priority={i < 2}
+                        />
+                      )}
                     </div>
                   </motion.div>
                 </li>

@@ -7,9 +7,10 @@ export type BackgroundConfig = {
   value: string; // hex color for 'color', URL for 'image'/'video'
 };
 
-export type ShowcaseImage = {
+export type ShowcaseItem = {
   id: string;
   url: string;
+  type: "image" | "video";
   uploadedAt: string;
 };
 
@@ -39,8 +40,8 @@ type UiState = {
   background: BackgroundConfig;
   setBackground: (version: number, config: BackgroundConfig) => void;
 
-  showcaseImages: ShowcaseImage[];
-  setShowcaseImages: (images: ShowcaseImage[]) => void;
+  showcaseItems: ShowcaseItem[];
+  setShowcaseItems: (items: ShowcaseItem[]) => void;
 };
 
 const DEFAULT_BACKGROUND: BackgroundConfig = {
@@ -78,6 +79,6 @@ export const useUiStore = create<UiState>((set) => ({
   setBackground: (version: number, config: BackgroundConfig) =>
     set({ backgroundVersion: version, background: config }),
 
-  showcaseImages: [],
-  setShowcaseImages: (images: ShowcaseImage[]) => set({ showcaseImages: images }),
+  showcaseItems: [],
+  setShowcaseItems: (items: ShowcaseItem[]) => set({ showcaseItems: items }),
 }));
