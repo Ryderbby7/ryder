@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { upload } from "@vercel/blob/client";
 
 type ShowcaseItem = {
   id: string;
@@ -39,32 +40,52 @@ export default function ShowcasePage() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const formData = new FormData();
-    for (const file of Array.from(files)) {
-      formData.append("files", file);
-    }
-
     try {
       setUploading(true);
       setMessage(null);
 
-      const res = await fetch("/api/assets/showcase", {
-        method: "POST",
-        body: formData,
-      });
+      const selected = Array.from(files);
+      let uploadedCount = 0;
 
-      if (!res.ok) {
-        setMessage("Failed to upload files");
-        return;
+      for (const file of selected) {
+        const lowerName = (file.name || "").toLowerCase();
+        const isVideo =
+          file.type.startsWith("video/") ||
+          lowerName.endsWith(".mov") ||
+          lowerName.endsWith(".mp4");
+
+        const ext = (() => {
+          const fromName = lowerName.includes(".")
+            ? lowerName.split(".").pop()
+            : null;
+
+          if (isVideo) return fromName === "mov" ? "mov" : "mp4";
+          if (fromName === "png") return "png";
+          if (fromName === "webp") return "webp";
+          if (fromName === "gif") return "gif";
+          return "jpg";
+        })();
+
+        const randomId = Math.random().toString(36).slice(2, 8);
+        const pathname = `assets/showcase/${Date.now()}-${randomId}.${ext}`;
+
+        await upload(pathname, file, {
+          access: "public",
+          handleUploadUrl: "/api/assets/showcase/upload",
+          clientPayload: JSON.stringify({ type: isVideo ? "video" : "image" }),
+        });
+
+        uploadedCount += 1;
       }
 
-      const data = await res.json();
-      setMessage(`Uploaded ${data.count} file(s)!`);
+      setMessage(`Uploaded ${uploadedCount} file(s)!`);
       
       // Refresh the list
       await fetchImages();
-    } catch {
-      setMessage("Something went wrong");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Something went wrong";
+      setMessage(msg);
     } finally {
       setUploading(false);
       // Reset the input
@@ -115,7 +136,7 @@ export default function ShowcasePage() {
               </span>
               <input
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+                accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,.mp4,.mov"
                 multiple
                 disabled={uploading}
                 onChange={handleUpload}

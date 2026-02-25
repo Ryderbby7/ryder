@@ -15,7 +15,7 @@ type ShowcaseItem = {
 };
 
 const IMAGE_EXT_RE = /\.(jpg|jpeg|png|webp|gif)$/i;
-const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v)$/i;
+const VIDEO_EXT_RE = /\.(mp4|mov)$/i;
 
 const IMAGE_CONTENT_TYPES = [
   "image/png",
@@ -24,7 +24,7 @@ const IMAGE_CONTENT_TYPES = [
   "image/gif",
 ];
 
-const VIDEO_CONTENT_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
+const VIDEO_CONTENT_TYPES = ["video/mp4", "video/quicktime"];
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 const MAX_VIDEO_BYTES = 25 * 1024 * 1024; // 25MB
@@ -49,8 +49,6 @@ function inferExtension(file: Blob): string {
       return "gif";
     case "video/mp4":
       return "mp4";
-    case "video/webm":
-      return "webm";
     case "video/quicktime":
       return "mov";
     default:
@@ -131,7 +129,7 @@ export async function POST(req: NextRequest) {
           {
             error:
               type === "video"
-                ? "Unsupported video type. Use mp4, webm, or mov."
+                ? "Unsupported video type. Use mp4 or mov."
                 : "Unsupported image type. Use png, jpg, webp, or gif.",
           },
           { status: 400 }

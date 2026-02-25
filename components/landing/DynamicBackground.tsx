@@ -8,6 +8,7 @@ export function DynamicBackground() {
   const { background, setBackground } = useUiStore();
   const [isReady, setIsReady] = useState(false);
   const [showFallback, setShowFallback] = useState(true);
+  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     const fetchBackground = async () => {
@@ -27,9 +28,14 @@ export function DynamicBackground() {
 
   useEffect(() => {
     if (!isReady) return;
+    // Ensure the opacity transition triggers (avoid same-tick style batching).
+    const raf = requestAnimationFrame(() => setIsVisible(true));
     const FADE_MS = 1000;
     const t = setTimeout(() => setShowFallback(false), FADE_MS);
-    return () => clearTimeout(t);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+    };
   }, [isReady]);
 
   const content = (() => {
@@ -89,7 +95,13 @@ export function DynamicBackground() {
       {showFallback ? <div className="absolute inset-0 bg-black" /> : null}
 
       {isReady ? (
-        <div className="absolute inset-0 opacity-0 animate-in fade-in duration-1000 ease-out motion-reduce:opacity-100 motion-reduce:animate-none">
+        <div
+          className={[
+            "absolute inset-0 transition-opacity duration-1000 ease-out",
+            isVisible ? "opacity-100" : "opacity-0",
+            "motion-reduce:opacity-100 motion-reduce:transition-none",
+          ].join(" ")}
+        >
           {content}
         </div>
       ) : null}
