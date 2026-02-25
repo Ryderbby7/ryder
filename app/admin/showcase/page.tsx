@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { upload } from "@vercel/blob/client";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 type ShowcaseItem = {
   id: string;
@@ -63,17 +63,35 @@ export default function ShowcasePage() {
           if (fromName === "png") return "png";
           if (fromName === "webp") return "webp";
           if (fromName === "gif") return "gif";
+          if (fromName === "jpeg") return "jpg";
           return "jpg";
         })();
 
-        const randomId = Math.random().toString(36).slice(2, 8);
-        const pathname = `assets/showcase/${Date.now()}-${randomId}.${ext}`;
-
-        await upload(pathname, file, {
-          access: "public",
-          handleUploadUrl: "/api/assets/showcase/upload",
-          clientPayload: JSON.stringify({ type: isVideo ? "video" : "image" }),
+        const tokenRes = await fetch("/api/assets/showcase/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: isVideo ? "video" : "image", ext }),
         });
+
+        if (!tokenRes.ok) {
+          const err = await tokenRes.json().catch(() => null);
+          throw new Error(err?.error || "Failed to start upload.");
+        }
+
+        const { path, token } = (await tokenRes.json()) as {
+          path: string;
+          token: string;
+        };
+
+        const uploaded = await getSupabaseBrowser().storage
+          .from("assets")
+          .uploadToSignedUrl(path, token, file, {
+            contentType: file.type || undefined,
+          });
+
+        if (uploaded.error) {
+          throw new Error(uploaded.error.message);
+        }
 
         uploadedCount += 1;
       }

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useUiStore } from "@/lib/store/useUiStore";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 export default function AudioPage() {
   const router = useRouter();
@@ -19,16 +20,38 @@ export default function AudioPage() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
       setUploading(true);
       setMessage(null);
 
+      const tokenRes = await fetch("/api/assets/audio/upload", { method: "POST" });
+
+      if (!tokenRes.ok) {
+        const err = await tokenRes.json().catch(() => null);
+        setMessage(err?.error || "Failed to start upload.");
+        return;
+      }
+
+      const { path, token } = (await tokenRes.json()) as {
+        path: string;
+        token: string;
+      };
+
+      const uploaded = await getSupabaseBrowser().storage
+        .from("assets")
+        .uploadToSignedUrl(path, token, file, {
+          contentType: file.type || undefined,
+        });
+
+      if (uploaded.error) {
+        setMessage(uploaded.error.message);
+        return;
+      }
+
       const res = await fetch("/api/assets/audio", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: path }),
       });
 
       if (!res.ok) {

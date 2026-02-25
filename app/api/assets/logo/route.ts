@@ -1,87 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put, list, del } from "@vercel/blob";
+import { extractAssetsPath, publicUrlFor } from "@/lib/supabase/utils";
+import { getOrCreateAppConfig, updateAppConfig } from "@/lib/supabase/appConfig";
 
 export const dynamic = "force-dynamic";
 
-const CONFIG_PREFIX = "config/app-config";
-const LOGO_PREFIX = "assets/logo";
-
-async function getConfig() {
-  try {
-    const { blobs } = await list({ prefix: CONFIG_PREFIX });
-    
-    if (blobs.length === 0) {
-      return { audioVersion: 0, logoPictureVersion: 0, reviewsVersion: 0, reviews: [] };
-    }
-    
-    const sortedBlobs = blobs.sort((a, b) => 
-      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
-    );
-    const latestConfig = sortedBlobs[0];
-    
-    const res = await fetch(latestConfig.url, { cache: "no-store" });
-    
-    if (!res.ok) {
-      return { audioVersion: 0, logoPictureVersion: 0, reviewsVersion: 0, reviews: [] };
-    }
-    
-    return await res.json();
-  } catch {
-    return { audioVersion: 0, logoPictureVersion: 0, reviewsVersion: 0, reviews: [] };
-  }
-}
-
-async function saveConfig(config: Record<string, unknown>) {
-  const { url } = await put(CONFIG_PREFIX + ".json", JSON.stringify(config, null, 2), {
-    access: "public",
-    contentType: "application/json",
-    addRandomSuffix: true,
-  });
-  
-  try {
-    const { blobs } = await list({ prefix: CONFIG_PREFIX });
-    const oldBlobs = blobs.filter(b => b.url !== url);
-    for (const blob of oldBlobs) {
-      await del(blob.url);
-    }
-  } catch {
-    // Cleanup failed, non-fatal
-  }
-  
-  return url;
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("file");
-
-    if (!file || !(file instanceof Blob)) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    const contentType = req.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return NextResponse.json(
+        { error: "Expected application/json" },
+        { status: 400 }
+      );
     }
 
-    const { url } = await put(LOGO_PREFIX + ".png", file, {
-      access: "public",
-      contentType: file.type || "image/png",
-      addRandomSuffix: true,
+    const body = (await req.json()) as { value?: string; path?: string };
+    const raw = (body.path ?? body.value ?? "").toString();
+    const path = extractAssetsPath(raw);
+    if (!path) {
+      return NextResponse.json({ error: "Invalid logo path" }, { status: 400 });
+    }
+
+    const config = await getOrCreateAppConfig();
+    const newVersion = (config.logo_picture_version || 0) + 1;
+    await updateAppConfig({
+      logo_picture_version: newVersion,
+      logo_path: path,
     });
-    
-    try {
-      const { blobs } = await list({ prefix: LOGO_PREFIX });
-      const oldLogoBlobs = blobs.filter(b => b.url !== url);
-      for (const blob of oldLogoBlobs) {
-        await del(blob.url);
-      }
-    } catch {
-      // Cleanup failed, non-fatal
-    }
 
-    const config = await getConfig();
-    const newVersion = (config.logoPictureVersion || 0) + 1;
-    const newConfig = { ...config, logoPictureVersion: newVersion, logoUrl: url };
-    await saveConfig(newConfig);
-
-    return NextResponse.json({ ok: true, version: newVersion, url });
+    return NextResponse.json({
+      ok: true,
+      version: newVersion,
+      url: publicUrlFor(path),
+    });
   } catch {
     return NextResponse.json(
       { error: "Failed to update logo" },
@@ -92,10 +43,10 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const config = await getConfig();
+    const config = await getOrCreateAppConfig();
     return NextResponse.json({
-      version: config.logoPictureVersion || 0,
-      url: config.logoUrl || null,
+      version: config.logo_picture_version || 0,
+      url: config.logo_path ? publicUrlFor(config.logo_path) : null,
     });
   } catch {
     return NextResponse.json({ version: 0, url: null });

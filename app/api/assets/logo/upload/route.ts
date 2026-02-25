@@ -5,36 +5,27 @@ export const dynamic = "force-dynamic";
 
 const ASSETS_BUCKET = "assets";
 const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp", "gif"] as const;
-const VIDEO_EXTS = ["mp4", "mov"] as const;
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    const body = (await request.json()) as Partial<{
-      type: "image" | "video";
-      ext: string;
-    }>;
-
-    const type = body.type;
+    const body = (await request.json()) as Partial<{ ext: string }>;
     const ext = typeof body.ext === "string" ? body.ext.toLowerCase() : "";
-    if ((type !== "image" && type !== "video") || !ext) {
+    if (!ext) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
-
-    const allowed = type === "video" ? VIDEO_EXTS : IMAGE_EXTS;
-    if (!(allowed as readonly string[]).includes(ext)) {
+    if (!(IMAGE_EXTS as readonly string[]).includes(ext)) {
       return NextResponse.json(
-        { error: type === "video" ? "Use mp4 or mov." : "Unsupported image type." },
+        { error: "Unsupported image type." },
         { status: 400 }
       );
     }
 
     const normalizedExt = ext === "jpeg" ? "jpg" : ext;
-    const rand = Math.random().toString(36).slice(2, 8);
-    const path = `showcase/${Date.now()}-${rand}.${normalizedExt}`;
+    const path = `logo/logo.${normalizedExt}`;
 
     const { data, error } = await getSupabaseAdmin().storage
       .from(ASSETS_BUCKET)
-      .createSignedUploadUrl(path);
+      .createSignedUploadUrl(path, { upsert: true });
 
     if (error || !data?.token) {
       return NextResponse.json(

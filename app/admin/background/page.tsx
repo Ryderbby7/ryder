@@ -1,10 +1,14 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useUiStore, BackgroundType, BackgroundConfig } from "@/lib/store/useUiStore";
+import {
+  useUiStore,
+  BackgroundType,
+  BackgroundConfig,
+} from "@/lib/store/useUiStore";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { upload } from "@vercel/blob/client";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 export default function BackgroundPage() {
   const router = useRouter();
@@ -80,46 +84,70 @@ export default function BackgroundPage() {
 
       const lowerName = (file.name || "").toLowerCase();
 
-      const getPathname = () => {
+      const getExt = () => {
         if (activeType === "image") {
-          if (file.type === "image/jpeg" || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
-            return "assets/background.jpg";
+          if (
+            file.type === "image/jpeg" ||
+            lowerName.endsWith(".jpg") ||
+            lowerName.endsWith(".jpeg")
+          ) {
+            return "jpg";
           }
           if (file.type === "image/webp" || lowerName.endsWith(".webp")) {
-            return "assets/background.webp";
+            return "webp";
           }
           if (file.type === "image/gif" || lowerName.endsWith(".gif")) {
-            return "assets/background.gif";
+            return "gif";
           }
-          return "assets/background.png";
+          return "png";
         }
 
         // video
-        if (file.type === "video/webm" || lowerName.endsWith(".webm")) {
-          return "assets/background.webm";
-        }
         if (file.type === "video/quicktime" || lowerName.endsWith(".mov")) {
-          return "assets/background.mov";
+          return "mov";
         }
-        return "assets/background.mp4";
+        return "mp4";
       };
 
-      // Upload directly from the browser to Vercel Blob (avoids Vercel Function body size limits).
-      const blob = await upload(getPathname(), file, {
-        access: "public",
-        handleUploadUrl: "/api/assets/background/upload",
-        clientPayload: JSON.stringify({ type: activeType }),
+      const ext = getExt();
+
+      // Get signed upload token (server) then upload to Supabase (browser).
+      const tokenRes = await fetch("/api/assets/background/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: activeType, ext }),
       });
 
-      // Now persist the new background URL in config (small JSON request).
+      if (!tokenRes.ok) {
+        const err = await tokenRes.json().catch(() => null);
+        setMessage(err?.error || "Failed to start upload.");
+        return;
+      }
+
+      const { path, token } = (await tokenRes.json()) as {
+        path: string;
+        token: string;
+      };
+
+      const uploaded = await getSupabaseBrowser().storage
+        .from("assets")
+        .uploadToSignedUrl(path, token, file, {
+          contentType: file.type || undefined,
+        });
+
+      if (uploaded.error) {
+        setMessage(uploaded.error.message);
+        return;
+      }
+
+      // Now persist the new background path in DB (small JSON request).
       const res = await fetch("/api/assets/background", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: activeType, value: blob.url }),
+        body: JSON.stringify({ type: activeType, value: path }),
       });
 
       if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
         setMessage("Failed to update background.");
         return;
       }
@@ -264,7 +292,7 @@ export default function BackgroundPage() {
               <span className="text-sm uppercase tracking-wide">Choose video</span>
               <input
                 type="file"
-                accept="video/mp4,video/webm,video/quicktime,.mov"
+                accept="video/mp4,video/quicktime,.mp4,.mov"
                 className="block w-full text-sm text-white file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-sm file:font-semibold file:bg-white file:text-black hover:file:bg-gray-200"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />

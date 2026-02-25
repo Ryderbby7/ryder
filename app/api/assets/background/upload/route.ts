@@ -1,63 +1,58 @@
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const IMAGE_CONTENT_TYPES = [
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-];
+const ASSETS_BUCKET = "assets";
+const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp", "gif"] as const;
+const VIDEO_EXTS = ["mp4", "mov"] as const;
 
-const VIDEO_CONTENT_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
+type Body = {
+  type: "image" | "video";
+  ext: string;
+};
 
-type ClientPayload = { type?: "image" | "video" } | null;
-
-function parseClientPayload(clientPayload: unknown): ClientPayload {
-  if (typeof clientPayload !== "string") return null;
-  try {
-    return JSON.parse(clientPayload) as ClientPayload;
-  } catch {
-    return null;
-  }
+function isAllowedExt(type: Body["type"], ext: string) {
+  const lower = ext.toLowerCase();
+  return type === "video"
+    ? (VIDEO_EXTS as readonly string[]).includes(lower)
+    : (IMAGE_EXTS as readonly string[]).includes(lower);
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
-  const body = (await request.json()) as HandleUploadBody;
-
   try {
-    const jsonResponse = await handleUpload({
-      body,
-      request,
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
-        // Only allow uploads to our expected background prefix.
-        if (!pathname.startsWith("assets/background")) {
-          throw new Error("Invalid upload pathname.");
-        }
+    const body = (await request.json()) as Partial<Body>;
+    const type = body.type;
+    const ext = body.ext;
 
-        const parsed = parseClientPayload(clientPayload);
-        const requestedType = parsed?.type;
+    if ((type !== "image" && type !== "video") || typeof ext !== "string") {
+      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    }
+    if (!isAllowedExt(type, ext)) {
+      return NextResponse.json(
+        { error: type === "video" ? "Use mp4 or mov." : "Unsupported image type." },
+        { status: 400 }
+      );
+    }
 
-        const allowedContentTypes =
-          requestedType === "video"
-            ? VIDEO_CONTENT_TYPES
-            : requestedType === "image"
-              ? IMAGE_CONTENT_TYPES
-              : [...IMAGE_CONTENT_TYPES, ...VIDEO_CONTENT_TYPES];
+    const normalizedExt = ext.toLowerCase() === "jpeg" ? "jpg" : ext.toLowerCase();
+    const path = `background/background.${normalizedExt}`;
 
-        return {
-          allowedContentTypes,
-          addRandomSuffix: true,
-          tokenPayload: JSON.stringify({ requestedType }),
-        };
-      },
-    });
+    const { data, error } = await getSupabaseAdmin().storage
+      .from(ASSETS_BUCKET)
+      .createSignedUploadUrl(path, { upsert: true });
 
-    return NextResponse.json(jsonResponse);
+    if (error || !data?.token) {
+      return NextResponse.json(
+        { error: error?.message || "Failed to create upload URL" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ path: data.path ?? path, token: data.token });
   } catch (error) {
     return NextResponse.json(
-      { error: (error as Error).message },
+      { error: error instanceof Error ? error.message : "Upload token error" },
       { status: 400 }
     );
   }

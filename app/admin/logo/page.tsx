@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useUiStore } from "@/lib/store/useUiStore";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 export default function BackgroundPage() {
   const router = useRouter();
@@ -19,16 +20,54 @@ export default function BackgroundPage() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
       setUploading(true);
       setMessage(null);
 
+      const lowerName = (file.name || "").toLowerCase();
+      const ext =
+        lowerName.endsWith(".png")
+          ? "png"
+          : lowerName.endsWith(".webp")
+            ? "webp"
+            : lowerName.endsWith(".gif")
+              ? "gif"
+              : lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")
+                ? "jpg"
+                : "png";
+
+      const tokenRes = await fetch("/api/assets/logo/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ext }),
+      });
+
+      if (!tokenRes.ok) {
+        const err = await tokenRes.json().catch(() => null);
+        setMessage(err?.error || "Failed to start upload.");
+        return;
+      }
+
+      const { path, token } = (await tokenRes.json()) as {
+        path: string;
+        token: string;
+      };
+
+      const uploaded = await getSupabaseBrowser().storage
+        .from("assets")
+        .uploadToSignedUrl(path, token, file, {
+          contentType: file.type || undefined,
+        });
+
+      if (uploaded.error) {
+        setMessage(uploaded.error.message);
+        return;
+      }
+
       const res = await fetch("/api/assets/logo", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: path }),
       });
 
       if (!res.ok) {

@@ -1,87 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put, list, del } from "@vercel/blob";
+import { extractAssetsPath, publicUrlFor } from "@/lib/supabase/utils";
+import { getOrCreateAppConfig, updateAppConfig } from "@/lib/supabase/appConfig";
 
 export const dynamic = "force-dynamic";
 
-const CONFIG_PREFIX = "config/app-config";
-const AUDIO_PREFIX = "assets/audio";
-
-async function getConfig() {
-  try {
-    const { blobs } = await list({ prefix: CONFIG_PREFIX });
-    
-    if (blobs.length === 0) {
-      return { audioVersion: 0, logoPictureVersion: 0, reviewsVersion: 0, reviews: [] };
-    }
-    
-    const sortedBlobs = blobs.sort((a, b) => 
-      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
-    );
-    const latestConfig = sortedBlobs[0];
-    
-    const res = await fetch(latestConfig.url, { cache: "no-store" });
-    
-    if (!res.ok) {
-      return { audioVersion: 0, logoPictureVersion: 0, reviewsVersion: 0, reviews: [] };
-    }
-    
-    return await res.json();
-  } catch {
-    return { audioVersion: 0, logoPictureVersion: 0, reviewsVersion: 0, reviews: [] };
-  }
-}
-
-async function saveConfig(config: Record<string, unknown>) {
-  const { url } = await put(CONFIG_PREFIX + ".json", JSON.stringify(config, null, 2), {
-    access: "public",
-    contentType: "application/json",
-    addRandomSuffix: true,
-  });
-  
-  try {
-    const { blobs } = await list({ prefix: CONFIG_PREFIX });
-    const oldBlobs = blobs.filter(b => b.url !== url);
-    for (const blob of oldBlobs) {
-      await del(blob.url);
-    }
-  } catch {
-    // Cleanup failed, non-fatal
-  }
-  
-  return url;
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("file");
-
-    if (!file || !(file instanceof Blob)) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    const contentType = req.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      return NextResponse.json(
+        { error: "Expected application/json" },
+        { status: 400 }
+      );
     }
 
-    const { url } = await put(AUDIO_PREFIX + ".m4a", file, {
-      access: "public",
-      contentType: file.type || "audio/mp4",
-      addRandomSuffix: true,
-    });
-    
-    try {
-      const { blobs } = await list({ prefix: AUDIO_PREFIX });
-      const oldAudioBlobs = blobs.filter(b => b.url !== url);
-      for (const blob of oldAudioBlobs) {
-        await del(blob.url);
-      }
-    } catch {
-      // Cleanup failed, non-fatal
+    const body = (await req.json()) as { value?: string; path?: string };
+    const raw = (body.path ?? body.value ?? "").toString();
+    const path = extractAssetsPath(raw);
+    if (!path) {
+      return NextResponse.json({ error: "Invalid audio path" }, { status: 400 });
     }
 
-    const config = await getConfig();
-    const newVersion = (config.audioVersion || 0) + 1;
-    const newConfig = { ...config, audioVersion: newVersion, audioUrl: url };
-    await saveConfig(newConfig);
+    const config = await getOrCreateAppConfig();
+    const newVersion = (config.audio_version || 0) + 1;
+    await updateAppConfig({ audio_version: newVersion, audio_path: path });
 
-    return NextResponse.json({ ok: true, version: newVersion, url });
+    return NextResponse.json({ ok: true, version: newVersion, url: publicUrlFor(path) });
   } catch {
     return NextResponse.json(
       { error: "Failed to update audio" },
@@ -92,10 +36,10 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const config = await getConfig();
+    const config = await getOrCreateAppConfig();
     return NextResponse.json({
-      version: config.audioVersion || 0,
-      url: config.audioUrl || null,
+      version: config.audio_version || 0,
+      url: config.audio_path ? publicUrlFor(config.audio_path) : null,
     });
   } catch {
     return NextResponse.json({ version: 0, url: null });

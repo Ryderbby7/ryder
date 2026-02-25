@@ -1,54 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put, list, del } from "@vercel/blob";
+import { getOrCreateAppConfig, updateAppConfig } from "@/lib/supabase/appConfig";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
-
-const CONFIG_PREFIX = "config/app-config";
-
-async function getConfig() {
-  try {
-    const { blobs } = await list({ prefix: CONFIG_PREFIX });
-    
-    if (blobs.length === 0) {
-      return { audioVersion: 0, logoPictureVersion: 0, reviewsVersion: 0, reviews: [] };
-    }
-    
-    const sortedBlobs = blobs.sort((a, b) => 
-      new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
-    );
-    const latestConfig = sortedBlobs[0];
-    
-    const res = await fetch(latestConfig.url, { cache: "no-store" });
-    
-    if (!res.ok) {
-      return { audioVersion: 0, logoPictureVersion: 0, reviewsVersion: 0, reviews: [] };
-    }
-    
-    return await res.json();
-  } catch {
-    return { audioVersion: 0, logoPictureVersion: 0, reviewsVersion: 0, reviews: [] };
-  }
-}
-
-async function saveConfig(config: Record<string, unknown>) {
-  const { url } = await put(CONFIG_PREFIX + ".json", JSON.stringify(config, null, 2), {
-    access: "public",
-    contentType: "application/json",
-    addRandomSuffix: true,
-  });
-  
-  try {
-    const { blobs } = await list({ prefix: CONFIG_PREFIX });
-    const oldBlobs = blobs.filter(b => b.url !== url);
-    for (const blob of oldBlobs) {
-      await del(blob.url);
-    }
-  } catch {
-    // Cleanup failed, non-fatal
-  }
-  
-  return url;
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -58,34 +12,50 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const config = await getConfig();
-    const reviews = config.reviews || [];
-    const version = config.reviewsVersion || 0;
-    const newVersion = version + 1;
+    const name =
+      typeof body.name === "string" ? body.name.trim() : "";
+    const label =
+      typeof body.label === "string" ? body.label.trim() : null;
+    const comment =
+      typeof body.comment === "string" ? body.comment.trim() : "";
+    const ratingRaw = Number(body.rating);
+    const rating = Number.isFinite(ratingRaw)
+      ? Math.min(5, Math.max(1, Math.round(ratingRaw)))
+      : 5;
 
-    const newReview = {
-      id: Date.now().toString(),
-      name: body.name,
-      label: body.label,
-      rating: body.rating,
-      comment: body.comment,
-      createdAt: new Date().toISOString(),
-    };
+    if (!name || !comment) {
+      return NextResponse.json(
+        { error: "name and comment are required" },
+        { status: 400 }
+      );
+    }
 
-    reviews.push(newReview);
+    const inserted = await getSupabaseAdmin()
+      .from("reviews")
+      .insert({
+        name,
+        label,
+        rating,
+        comment,
+      })
+      .select("id")
+      .single();
 
-    const newConfig = {
-      ...config,
-      reviews,
-      reviewsVersion: newVersion,
-    };
+    if (inserted.error) {
+      return NextResponse.json(
+        { error: inserted.error.message },
+        { status: 500 }
+      );
+    }
 
-    await saveConfig(newConfig);
+    const config = await getOrCreateAppConfig();
+    const newVersion = (config.reviews_version || 0) + 1;
+    await updateAppConfig({ reviews_version: newVersion });
 
     return NextResponse.json({
       ok: true,
       version: newVersion,
-      reviewId: newReview.id,
+      reviewId: inserted.data.id,
     });
   } catch {
     return NextResponse.json(
@@ -106,18 +76,25 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const config = await getConfig();
-    const oldReviews = config.reviews || [];
-    const oldVersion = config.reviewsVersion || 0;
+    const deleted = await getSupabaseAdmin()
+      .from("reviews")
+      .delete()
+      .eq("id", reviewId);
 
-    config.reviews = oldReviews.filter((review: { id: string }) => review.id !== reviewId);
-    config.reviewsVersion = oldVersion + 1;
+    if (deleted.error) {
+      return NextResponse.json(
+        { error: deleted.error.message },
+        { status: 500 }
+      );
+    }
 
-    await saveConfig(config);
+    const config = await getOrCreateAppConfig();
+    const newVersion = (config.reviews_version || 0) + 1;
+    await updateAppConfig({ reviews_version: newVersion });
 
     return NextResponse.json({
       ok: true,
-      version: config.reviewsVersion,
+      version: newVersion,
     });
   } catch {
     return NextResponse.json(
@@ -129,10 +106,24 @@ export async function DELETE(req: NextRequest) {
 
 export async function GET() {
   try {
-    const config = await getConfig();
+    const config = await getOrCreateAppConfig();
+    const { data, error } = await getSupabaseAdmin()
+      .from("reviews")
+      .select("id,name,label,rating,comment,created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
     return NextResponse.json({
-      version: config.reviewsVersion || 0,
-      reviews: config.reviews || [],
+      version: config.reviews_version || 0,
+      reviews: (data ?? []).map((r) => ({
+        id: r.id,
+        name: r.name,
+        label: r.label,
+        rating: r.rating,
+        comment: r.comment,
+        createdAt: r.created_at,
+      })),
     });
   } catch {
     return NextResponse.json({ version: 0, reviews: [] });
