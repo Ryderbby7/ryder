@@ -210,6 +210,7 @@ export default function ShowcasePage() {
                         src={item.url}
                         alt="Showcase"
                         fill
+                        unoptimized
                         sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
                         className="object-cover"
                       />

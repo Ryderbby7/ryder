@@ -59,6 +59,7 @@ export function DynamicBackground() {
               alt=""
               fill
               sizes="100vw"
+              unoptimized
               className="object-cover"
               priority
             />

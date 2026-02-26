@@ -87,6 +87,7 @@ export default function WorkShowcase() {
                           alt={`Work ${i + 1}`}
                           width={800}
                           height={1200}
+                          unoptimized
                           className="
                             h-auto w-full max-h-150
                             object-contain

@@ -12,6 +12,11 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "*.public.blob.vercel-storage.com",
       },
+      {
+        protocol: "https",
+        hostname: "iuostgoiopbnoaszlkfb.supabase.co",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
 };
