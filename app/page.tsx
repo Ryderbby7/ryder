@@ -11,10 +11,12 @@ import { useUiStore } from "@/lib/store/useUiStore";
 import { useRouter } from "next/navigation";
 import { FloatingIcons } from "@/components/FloatingIcons";
 import { DynamicBackground } from "@/components/landing/DynamicBackground";
+import { useEffect } from "react";
 
 export default function HomePage() {
   const { isLandingStarted, startLanding } = useStartLanding();
   const {
+    setLogoPicture,
     openHaircutBooking,
     openBeardBooking,
     openHaircutAndBeardBooking,
@@ -23,6 +25,14 @@ export default function HomePage() {
     isHaircutAndBeardBookingOpen,
   } = useUiStore();
   const router = useRouter();
+
+  // Prefetch logo before the user clicks start so the URL is ready when animations begin
+  useEffect(() => {
+    fetch("/api/assets/logo", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => setLogoPicture(data.version, data.url))
+      .catch(() => {});
+  }, [setLogoPicture]);
 
   const isBookingOpen =
     isHaircutBookingOpen || isBeardBookingOpen || isHaircutAndBeardBookingOpen;
